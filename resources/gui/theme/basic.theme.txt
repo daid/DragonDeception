@@ -1,0 +1,25 @@
+{
+    color: #FFFFFF
+    font: gui/theme/Inconsolata-Bold.ttf
+    size: 20
+    [label] {
+    }
+    [button] {
+        color.hovered: #808080
+    }
+    [button.background] {
+        image: gui/theme/pixel.png
+        color: #404040
+    }
+    [panel] {
+        image: gui/theme/pixel.png
+        color: #202020
+    }
+    [progressbar] {
+    }
+    [progressbar.background] {
+    }
+    [image] {
+    }
+}
+

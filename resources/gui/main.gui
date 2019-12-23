@@ -1,0 +1,134 @@
+[MAIN] {
+    stretch: true
+
+    [BUILD_PANEL] {
+        type: panel
+        fill_width: true
+        alignment: bottom
+        height: 70
+        layout: horizontal
+        
+        [DIG] {
+            type: button
+            caption: [DIG]
+            size: 100, 40
+            margin: 10
+        }
+        [PIT] {
+            type: button
+            caption: [PIT]
+            size: 100, 40
+            margin: 10
+        }
+        [LOOT] {
+            type: button
+            caption: [LOOT]
+            size: 100, 40
+            margin: 10
+        }
+        [FIRE] {
+            type: button
+            caption: [FIRE]
+            size: 100, 40
+            margin: 10
+        }
+        [SLIME] {
+            type: button
+            caption: [SLIME]
+            size: 100, 40
+            margin: 10
+        }
+        [BODY] {
+            type: button
+            caption: [BODY]
+            size: 100, 40
+            margin: 10
+        }
+        [SELL] {
+            type: button
+            caption: [SELL]
+            size: 100, 40
+            margin: 10
+        }
+    }
+    [INFO_PANEL] {
+        type: panel
+        alignment: topleft
+        layout: vertical
+        match_content_size: true
+        
+        [PLAY_BUTTON] {
+            type: button
+            caption: [END DAY]
+            size: 140, 40
+            margin: 10
+        }
+        [INFO_LABEL] {
+            type: label
+            size: 140, 140
+            text.alignment: topleft
+            text.size: 12
+            margin: 10
+            caption: Add a spike pit.\
+                Simple trap.
+        }
+        [BUILD_BUTTON] {
+            type: button
+            caption: [BUILD]
+            size: 140, 40
+            margin: 10
+        }
+    }
+    
+    [RESULT_PANEL] {
+        type: panel
+        alignment: center
+        match_content_size: true
+        padding: 20
+        order: 100
+        layout: vertical
+        visible: false
+        
+        [RESULT_ROWS] {
+            match_content_size: true
+            layout: vertical
+        }
+        [TRIBUTE] {
+            type: label
+            size: 300, 20
+            caption: Tribute from villages: 100$
+            text.alignment: left
+        }
+        {
+            size: 10, 10
+        }
+        
+        [RESULT_DONE_BUTTON] {
+            type: button
+            caption: [OK]
+            size: 100, 40
+        }
+    }
+}
+
+[RESULT_LINE] {
+    size: 370, 20
+    layout: horizontal
+    {
+        type: label
+        size: 20, 20
+        caption: @
+    }
+    [RESULT] {
+        type: label
+        size: 100, 20
+        caption: Death
+        text.alignment: left
+    }
+    [INFO] {
+        type: label
+        size: 250, 20
+        caption: $100 Risk++ Reward--
+        text.alignment: left
+    }
+}

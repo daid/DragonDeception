@@ -1,0 +1,429 @@
+#include <sp2/engine.h>
+#include <sp2/window.h>
+#include <sp2/logging.h>
+#include <sp2/random.h>
+#include <sp2/io/directoryResourceProvider.h>
+#include <sp2/graphics/fontManager.h>
+#include <sp2/graphics/gui/scene.h>
+#include <sp2/graphics/gui/theme.h>
+#include <sp2/graphics/scene/graphicslayer.h>
+#include <sp2/graphics/scene/basicnoderenderpass.h>
+#include <sp2/graphics/scene/collisionrenderpass.h>
+#include <sp2/graphics/textureManager.h>
+#include <sp2/scene/scene.h>
+#include <sp2/scene/node.h>
+#include <sp2/scene/camera.h>
+#include <sp2/io/keybinding.h>
+
+sp::P<sp::Window> window;
+
+sp::io::Keybinding escape_key{"exit", "Escape"};
+sp::Font* main_font;
+
+class Tile : public sp::Node
+{
+public:
+    enum class Type
+    {
+        Open,
+        Wall,
+        SpikeTrap
+    };
+
+    Tile(sp::P<sp::Node> parent)
+    : sp::Node(parent)
+    {
+        render_data.type = sp::RenderData::Type::Normal;
+        render_data.shader = sp::Shader::get("internal:basic.shader");
+        render_data.texture = main_font->getTexture(32);
+        render_data.color = sp::HsvColor(0, 0, sp::random(60, 100));
+        setType(Type::Wall);
+    }
+
+    void setType(Type type)
+    {
+        this->type = type;
+        switch(type)
+        {
+        case Type::Open:
+            render_data.mesh = nullptr;
+            break;
+        case Type::Wall:
+            render_data.mesh = main_font->createString("#", 32, 1.5, sp::Vector2d(0, 0), sp::Alignment::Center);
+            render_data.color = sp::HsvColor(0, 0, sp::random(60, 100));
+            break;
+        case Type::SpikeTrap:
+            render_data.mesh = main_font->createString("^", 32, 1.5, sp::Vector2d(0, 0), sp::Alignment::Center);
+            render_data.color = sp::HsvColor(0, 80, 80);
+            break;
+        }
+    }
+
+    Type getType()
+    {
+        return type;
+    }
+
+    bool isSolidTile()
+    {
+        return type == Type::Wall;
+    }
+
+    bool triggerTrap()
+    {
+        if (!triggered)
+        {
+            triggered = true;
+            return true;
+        }
+        return false;
+    }
+private:
+    Type type;
+    bool triggered = false;
+};
+sp::P<Tile> getTileAt(sp::Vector2i);
+
+class Hero : public sp::Node
+{
+public:
+    Hero(sp::P<sp::Node> parent)
+    : sp::Node(parent)
+    {
+        render_data.type = sp::RenderData::Type::Normal;
+        render_data.shader = sp::Shader::get("internal:basic.shader");
+        render_data.mesh = main_font->createString("@", 32, 1.5, sp::Vector2d(0, 0), sp::Alignment::Center);
+        render_data.texture = main_font->getTexture(32);
+        render_data.color = sp::HsvColor(90, 70, 100);
+        render_data.order = 1;
+
+        for(int x=0; x<32; x++)
+            for(int y=0; y<32; y++)
+                tile_status[x][y] = TileStatus::Unseen;
+    }
+
+    virtual void onFixedUpdate() override
+    {
+        if (death)
+            return;
+    
+        if (!moving)
+        {
+            sp::Vector2i position{getPosition2D()};
+            //Mark all directly visible tiles as "seen"
+            // and mark tiles next to directly visible tiles as "interresting" unless they are solid
+            for(int n=0; n<5; n++)
+            {
+                sp::P<Tile> tile = getTileAt(position + sp::Vector2i(n, 0));
+                if (!tile || tile->isSolidTile())
+                    break;
+                setTileSeen(position + sp::Vector2i(n, 0));
+            }
+            for(int n=1; n<5; n++)
+            {
+                sp::P<Tile> tile = getTileAt(position + sp::Vector2i(-n, 0));
+                if (!tile || tile->isSolidTile())
+                    break;
+                setTileSeen(position + sp::Vector2i(-n, 0));
+            }
+            for(int n=1; n<5; n++)
+            {
+                sp::P<Tile> tile = getTileAt(position + sp::Vector2i(0, n));
+                if (!tile || tile->isSolidTile())
+                    break;
+                setTileSeen(position + sp::Vector2i(0, n));
+            }
+            for(int n=1; n<5; n++)
+            {
+                sp::P<Tile> tile = getTileAt(position + sp::Vector2i(0, -n));
+                if (!tile || tile->isSolidTile())
+                    break;
+                setTileSeen(position + sp::Vector2i(0, -n));
+            }
+
+            //Find the nearest "interresting" tile
+            sp::Vector2i target = findInterestingTile(position);
+            if (target.x < 0)
+                target = sp::Vector2i(0, 16);
+            
+            //Find a path to the "interresting" tile
+            target = pathfind(position, target);
+            
+            if (target.x > -1 && target != position)
+            {
+                moving = 16;
+                move_direction = sp::Vector2d(target - position) / double(moving);
+            }
+            else if (target == position)
+            {
+                if (target == sp::Vector2i(0, 16))
+                {
+                    delete this;
+                }
+            }
+        }
+        else
+        {
+            setPosition(getPosition2D() + move_direction);
+            moving--;
+            if (!moving)
+            {
+                setPosition(sp::Vector2d(sp::Vector2i(getPosition2D())));
+                sp::P<Tile> tile = getTileAt(sp::Vector2i(getPosition2D()));
+                if (tile->getType() == Tile::Type::SpikeTrap)
+                {
+                    if (tile->triggerTrap())
+                    {
+                        killed();
+                    }
+                }
+            }
+        }
+    }
+
+    void killed()
+    {
+        render_data.color = sp::HsvColor(0, 70, 100);
+        death = true;
+    }
+private:
+    void setTileSeen(sp::Vector2i position)
+    {
+        sp::P<Tile> tile = getTileAt(position);
+        if (!tile || tile->isSolidTile())
+            return;
+        tile_status[position.x][position.y] = TileStatus::Seen;
+        setTileInterrested(position + sp::Vector2i(1, 0));
+        setTileInterrested(position + sp::Vector2i(-1, 0));
+        setTileInterrested(position + sp::Vector2i(0, 1));
+        setTileInterrested(position + sp::Vector2i(0, -1));
+    }
+
+    void setTileInterrested(sp::Vector2i position)
+    {
+        sp::P<Tile> tile = getTileAt(position);
+        if (!tile || tile->isSolidTile())
+            return;
+        if (tile_status[position.x][position.y] == TileStatus::Unseen)
+            tile_status[position.x][position.y] = TileStatus::Interrested;
+    }
+
+    sp::Vector2i findInterestingTile(sp::Vector2i position)
+    {
+        sp::Vector2i best(-1, -1);
+        int best_dist = 100;
+
+        for(int x=0; x<32; x++)
+        {
+            for(int y=0; y<32; y++)
+            {
+                if (tile_status[x][y] == TileStatus::Interrested)
+                {
+                    int dist = (sp::Vector2i(x, y) - position).length();
+                    if (dist < best_dist)
+                    {
+                        best = sp::Vector2i(x, y);
+                        best_dist = dist;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    sp::Vector2i pathfind(sp::Vector2i start, sp::Vector2i target)
+    {
+        std::vector<sp::Vector2i> todo;
+        std::unordered_map<sp::Vector2i, sp::Vector2i> source;
+        todo.push_back(start);
+        source[start] = start;
+        while(todo.size() > 0)
+        {
+            sp::Vector2i p = todo[0];
+            if (p == target)
+            {
+                while(source[p] != start)
+                    p = source[p];
+                return p;
+            }
+            todo.erase(todo.begin());
+            if (p.x > 0 && tile_status[p.x-1][p.y] != TileStatus::Unseen)
+            {
+                if (source.find(p + sp::Vector2i(-1, 0)) == source.end())
+                {
+                    todo.push_back(p + sp::Vector2i(-1, 0));
+                    source[p + sp::Vector2i(-1, 0)] = p;
+                }
+            }
+            if (p.y > 0 && tile_status[p.x][p.y-1] != TileStatus::Unseen)
+            {
+                if (source.find(p + sp::Vector2i(0, -1)) == source.end())
+                {
+                    todo.push_back(p + sp::Vector2i(0, -1));
+                    source[p + sp::Vector2i(0, -1)] = p;
+                }
+            }
+            if (p.x < 31 && tile_status[p.x+1][p.y] != TileStatus::Unseen)
+            {
+                if (source.find(p + sp::Vector2i(1, 0)) == source.end())
+                {
+                    todo.push_back(p + sp::Vector2i(1, 0));
+                    source[p + sp::Vector2i(1, 0)] = p;
+                }
+            }
+            if (p.y < 31 && tile_status[p.x][p.y+1] != TileStatus::Unseen)
+            {
+                if (source.find(p + sp::Vector2i(0, 1)) == source.end())
+                {
+                    todo.push_back(p + sp::Vector2i(0, 1));
+                    source[p + sp::Vector2i(0, 1)] = p;
+                }
+            }
+        }
+        return sp::Vector2i(-1, -1);
+    }
+
+    int moving = 0;
+    sp::Vector2d move_direction;
+    bool death = false;
+
+    enum class TileStatus
+    {
+        Unseen,
+        Seen,
+        Interrested
+    } tile_status[32][32];
+};
+
+class DungeonScene : public sp::Scene
+{
+public:
+    DungeonScene()
+    : sp::Scene("DUNGEON")
+    {
+        sp::P<sp::Camera> camera = new sp::Camera(getRoot());
+        setDefaultCamera(camera);
+        camera->setOrtographic(sp::Vector2d(map_size/2+2.0, map_size/2+2.0));
+        camera->setPosition(sp::Vector2d(map_size/2, map_size/2));
+
+        for(int x=0; x<map_size; x++)
+        {
+            for(int y=0; y<map_size; y++)
+            {
+                tiles[x][y] = new Tile(getRoot());
+                tiles[x][y]->setPosition(sp::Vector2d(x, y));
+            }
+        }
+        for(int x=0; x<=5; x++)
+        {
+            tiles[x][entry_point.y]->setType(Tile::Type::Open);
+        }
+        tiles[5][entry_point.y-1]->setType(Tile::Type::Open);
+        tiles[5][entry_point.y+1]->setType(Tile::Type::Open);
+    }
+
+    virtual void onFixedUpdate() override
+    {
+        if (heroes.size() == 0)
+        {
+            sp::P<Hero> hero = new Hero(getRoot());
+            hero->setPosition(sp::Vector2d(entry_point));
+            heroes.add(hero);
+        }
+    }
+
+    virtual bool onPointerDown(sp::io::Pointer::Button button, sp::Ray3d ray, int id) override
+    {
+        sp::Vector2i tile_position(std::round(ray.start.x), std::round(ray.start.y));
+        if (tile_position.x < 1 || tile_position.y < 1 || tile_position.x >= map_size-1 || tile_position.y >= map_size-1)
+            return false;
+        
+        sp::P<Tile> tile = tiles[tile_position.x][tile_position.y];
+        if (button == sp::io::Pointer::Button::Left && canOpen(tile_position))
+        {
+            tile->setType(Tile::Type::Open);
+        }
+        if (button == sp::io::Pointer::Button::Right && tile->getType() == Tile::Type::Open)
+        {
+            tile->setType(Tile::Type::SpikeTrap);
+        }
+        return true;
+    }
+
+    virtual void onPointerDrag(sp::Ray3d ray, int id) override
+    {
+    }
+
+    virtual void onPointerUp(sp::Ray3d ray, int id) override
+    {
+    }
+
+    bool canOpen(sp::Vector2i position)
+    {
+        if (position.x < 1 || position.y < 1 || position.x >= map_size-1 || position.y >= map_size-1)
+            return false;
+        if (!tiles[position.x-1][position.y]->isSolidTile())
+            return true;
+        if (!tiles[position.x+1][position.y]->isSolidTile())
+            return true;
+        if (!tiles[position.x][position.y+1]->isSolidTile())
+            return true;
+        if (!tiles[position.x][position.y-1]->isSolidTile())
+            return true;
+        return false;
+    }
+
+    bool canClose(sp::Vector2i position)
+    {
+        return false;
+    }
+
+    static constexpr int map_size = 32;
+    sp::P<Tile> tiles[map_size][map_size];
+    sp::Vector2i entry_point{0, 16};
+
+    sp::PList<Hero> heroes;
+};
+sp::P<Tile> getTileAt(sp::Vector2i position)
+{
+    sp::P<DungeonScene> dungeon = sp::Scene::get("DUNGEON");
+    if (position.x >= 0 && position.x < dungeon->map_size && position.y >= 0 && position.y < dungeon->map_size)
+        return dungeon->tiles[position.x][position.y];
+    return nullptr;
+}
+
+int main(int argc, char** argv)
+{
+    sp::P<sp::Engine> engine = new sp::Engine();
+
+    //Create resource providers, so we can load things.
+    new sp::io::DirectoryResourceProvider("resources");
+
+    //Disable or enable smooth filtering by default, enabling it gives nice smooth looks, but disabling it gives a more pixel art look.
+    sp::texture_manager.setDefaultSmoothFiltering(true);
+
+    //Create a window to render on, and our engine.
+    window = new sp::Window(4.0/3.0);
+#ifndef DEBUG
+    window->setFullScreen(true);
+    window->hideCursor();
+#endif
+
+    sp::gui::Theme::loadTheme("default", "gui/theme/basic.theme.txt");
+    new sp::gui::Scene(sp::Vector2d(640, 480));
+    main_font = sp::font_manager.get("gui/theme/Inconsolata-Bold.ttf");
+
+    sp::P<sp::SceneGraphicsLayer> scene_layer = new sp::SceneGraphicsLayer(1);
+    scene_layer->addRenderPass(new sp::BasicNodeRenderPass());
+#ifdef DEBUG
+    scene_layer->addRenderPass(new sp::CollisionRenderPass());
+#endif
+    window->addLayer(scene_layer);
+
+    
+    new DungeonScene();
+
+    engine->run();
+
+    return 0;
+}

@@ -1,0 +1,48 @@
+[MENU] {
+    stretch: true
+
+    {
+        type: label
+        caption: Dragon
+        text.size: 100
+        alignment: top
+        text.alignment: right
+        size: 100, 100
+    }
+    {
+        type: label
+        caption: Deception
+        text.size: 100
+        alignment: top
+        margin: 80
+        text.alignment: left
+        size: 400, 100
+    }
+    {
+        type: label
+        caption: A game of managing a dungeon\
+            and pretending to have a dragon.
+        alignment: center
+        text.size: 30
+    }
+
+    [PLAY_BUTTON] {
+        type: button
+        caption: [PLAY]
+        size: 140, 40
+        margin: 130
+        alignment: bottom
+    }
+    
+    {
+        type: label
+        caption: Credits:\
+            Font: Inconsolata and NanumGothicCoding, Open Font License\
+            https://fonts.google.com/\
+            Code: libfreetype2, stb, SDL2\
+            https://github.com/daid/SeriousProton2
+        alignment: bottom
+        text.alignment: bottom
+        margin: 10
+    }
+}
